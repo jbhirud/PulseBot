@@ -9,3 +9,6 @@ build/
 *.log
 data/historical/
 data/logs/
+
+# Local coverage artifact
+coverage.xml
