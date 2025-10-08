@@ -1,32 +1,31 @@
 import ccxt
 import os
+from ..exchanges.api_key_manager import APIKeyManager
+import logging
 
-
-class APIKeyManager:
-    def __init__(self):
-        # Placeholder for secure key storage integration
-        self.keys = {}
-
-    def set_key(self, exchange_name, api_key, secret):
-        self.keys[exchange_name] = {'apiKey': api_key, 'secret': secret}
-
-    def get_key(self, exchange_name):
-        return self.keys.get(exchange_name) or {
-            'apiKey': os.environ.get(f'{exchange_name.upper()}_API_KEY'),
-            'secret': os.environ.get(f'{exchange_name.upper()}_SECRET')
-        }
+logger = logging.getLogger(__name__)
 
 
 class MultiExchangeManager:
     def __init__(self):
         self.exchanges = {}
+        # Use the Vault-capable APIKeyManager by default
         self.api_key_manager = APIKeyManager()
 
     def add_exchange(self, exchange_name, api_key=None, secret=None, testnet=False):
         exchange_config = {'sandbox': testnet}
-        key = api_key or secret and {'apiKey': api_key, 'secret': secret} or self.api_key_manager.get_key(exchange_name)
 
-        if key and key.get('apiKey') and key.get('secret'):
+        # Prefer explicit args; otherwise fetch from APIKeyManager (Vault/env)
+        key = None
+        if api_key and secret:
+            key = {'apiKey': api_key, 'secret': secret}
+        else:
+            key = self.api_key_manager.get_keys(exchange_name)
+
+        if key and key.get('key') and key.get('secret'):
+            # APIKeyManager returns {'key','secret'} shape; adapt to ccxt expected names
+            exchange_config.update({'apiKey': key.get('key'), 'secret': key.get('secret')})
+        elif key and key.get('apiKey') and key.get('secret'):
             exchange_config.update({'apiKey': key.get('apiKey'), 'secret': key.get('secret')})
 
         if exchange_name == 'binance':

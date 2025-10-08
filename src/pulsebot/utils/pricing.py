@@ -32,6 +32,14 @@ def fetch_price_usd(symbol, exchange=None, fallback_api=None):
                 for key in ('price', 'last', 'ticker'):
                     if key in data:
                         return float(data[key])
+                    # handle coin-id -> {"usd": price} formats (e.g., CoinGecko)
+                # If top-level keys map to dicts with 'usd' value, use that
+                for v in data.values():
+                    if isinstance(v, dict) and 'usd' in v:
+                        try:
+                            return float(v['usd'])
+                        except Exception:
+                            pass
             # if list-like, try first element
             if isinstance(data, list) and len(data) > 0:
                 try:

@@ -1,5 +1,9 @@
 import ccxt
 import os
+import time
+import random
+from typing import Optional
+import logging
 
 
 class BinanceManager:
@@ -45,4 +49,60 @@ class BinanceManager:
         order_type = 'limit' if price else 'market'
         if not self.exchange:
             raise RuntimeError('Exchange not connected')
-        return self.exchange.create_order(symbol, order_type, side, amount, price)
+        return self._safe_create_order(symbol, order_type, side, amount, price)
+
+    def _safe_create_order(self, symbol: str, order_type: str, side: str, amount: float, price: Optional[float] = None, *,
+                           max_retries: int = 3, base_backoff: float = 0.5, idempotency_key: Optional[str] = None):
+        """Create an order with retries, exponential backoff, and optional idempotency.
+
+        - Retries transient exceptions up to max_retries.
+        - Adds a simple jitter to backoff to avoid thundering herd.
+        - If idempotency_key is provided and the exchange driver supports passing headers, it will attach it.
+        """
+        attempt = 0
+        logger = logging.getLogger(__name__)
+        # metrics hook (callable) - can be monkeypatched in tests or replaced by a real hook
+        metrics_hook = getattr(self, 'metrics_hook', None)
+        while True:
+            attempt += 1
+            try:
+                params = {}
+                # Map idempotency into headers if requested; many exchange SDKs accept a 'headers' dict in params
+                if idempotency_key:
+                    params['headers'] = {'Idempotency-Key': idempotency_key}
+
+                if price is not None:
+                    res = self.exchange.create_order(symbol, order_type, side, amount, price, params)
+                else:
+                    res = self.exchange.create_order(symbol, order_type, side, amount, params)
+
+                # Report success to metrics hook
+                if callable(metrics_hook):
+                    try:
+                        metrics_hook(event='order_success', exchange=getattr(self.exchange, 'id', None) or 'unknown')
+                    except Exception:
+                        logger.debug('metrics_hook failed', exc_info=True)
+
+                return res
+            except Exception as e:
+                # Consider all exceptions transient for now; in production inspect type/messages
+                logger.warning('order attempt %d failed: %s', attempt, str(e))
+                if callable(metrics_hook):
+                    try:
+                        metrics_hook(event='order_retry', exchange=getattr(self.exchange, 'id', None) or 'unknown', attempt=attempt)
+                    except Exception:
+                        logger.debug('metrics_hook failed', exc_info=True)
+
+                if attempt > max_retries:
+                    logger.error('order failed after %d attempts', attempt)
+                    if callable(metrics_hook):
+                        try:
+                            metrics_hook(event='order_failed', exchange=getattr(self.exchange, 'id', None) or 'unknown', attempt=attempt)
+                        except Exception:
+                            logger.debug('metrics_hook failed', exc_info=True)
+                    raise
+                backoff = base_backoff * (2 ** (attempt - 1))
+                # jitter +/- 20%
+                jitter = backoff * 0.2 * (random.random() * 2 - 1)
+                sleep_time = max(0.0, backoff + jitter)
+                time.sleep(sleep_time)
