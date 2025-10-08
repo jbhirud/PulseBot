@@ -40,21 +40,22 @@ jobs:
         run: |
           PYTHONPATH=src python -m pytest --cov=src --cov-report=xml -q
 
-      - name: Check coverage threshold
+      - name: Check coverage threshold (80% line coverage)
         run: |
-          pip install coverage
           python - <<'PY'
-import sys
-from coverage import Coverage
-cov = Coverage(data_file='coverage.xml')
-cov.start()
-cov.stop()
+import sys, xml.etree.ElementTree as ET
 try:
-    import xml.etree.ElementTree as ET
     tree = ET.parse('coverage.xml')
     root = tree.getroot()
-    missed = float(root.attrib.get('line-rate', '0'))
-except Exception:
+    # coverage.py writes <coverage line-rate="0.92" ...>
+    line_rate = float(root.attrib.get('line-rate', '0'))
+    percent = line_rate * 100
+    print(f"Coverage: {percent:.2f}%")
+    if percent < 80.0:
+        print("Coverage threshold not met (80%). Failing job.")
+        sys.exit(2)
+except Exception as e:
+    print('Failed to parse coverage.xml:', e)
     sys.exit(1)
 PY
 

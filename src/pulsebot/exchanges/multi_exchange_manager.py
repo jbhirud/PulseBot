@@ -37,15 +37,60 @@ class MultiExchangeManager:
             self.exchanges[exchange_name] = ccxt.delta(exchange_config)
 
     def calculate_total_usd(self, balance):
-        # Placeholder: attempt to sum USD-equivalent across assets
-        total = 0
+        # Convert asset balances to USD using tickers where possible
+        total = 0.0
+        # balance typically contains keys like 'free', 'used', 'total' or asset symbols
         for asset, info in balance.items():
-            # ccxt returns nested structures; this is a simplified placeholder
             try:
-                total += float(info.get('total', 0))
+                # if asset looks like a fiat USD entry
+                if asset in ('USD', 'USDT', 'USDC'):
+                    total += float(info.get('total', 0))
+                else:
+                    # try to fetch ticker for asset/USD or asset/USDT
+                    symbol_usd = f"{asset}/USD"
+                    symbol_usdt = f"{asset}/USDT"
+                    price = None
+                    try:
+                        ticker = self._last_ticker_cache.get(symbol_usd)
+                        if ticker is None:
+                            ticker = self._fetch_ticker_from_exchanges(symbol_usd)
+                        price = ticker
+                    except Exception:
+                        pass
+
+                    if price is None:
+                        try:
+                            ticker = self._last_ticker_cache.get(symbol_usdt)
+                            if ticker is None:
+                                ticker = self._fetch_ticker_from_exchanges(symbol_usdt)
+                            price = ticker
+                        except Exception:
+                            pass
+
+                    asset_total = float(info.get('total', 0))
+                    if price is not None:
+                        total += asset_total * float(price)
             except Exception:
-                pass
+                continue
+
         return total
+
+    def _fetch_ticker_from_exchanges(self, symbol):
+        # Try each exchange to fetch a ticker for symbol and cache it
+        if not hasattr(self, '_last_ticker_cache'):
+            self._last_ticker_cache = {}
+
+        for ex in self.exchanges.values():
+            try:
+                t = ex.fetch_ticker(symbol)
+                price = t.get('last') or t.get('close')
+                if price:
+                    self._last_ticker_cache[symbol] = price
+                    return price
+            except Exception:
+                continue
+
+        return None
 
     def get_aggregated_balance(self):
         total_balance = 0
