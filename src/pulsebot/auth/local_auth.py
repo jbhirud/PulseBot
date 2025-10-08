@@ -1,6 +1,6 @@
-import hashlib
 import sqlite3
 from contextlib import contextmanager
+import bcrypt
 
 
 class LocalAuth:
@@ -31,26 +31,31 @@ class LocalAuth:
             ''')
 
     def register_user(self, username, password):
-        """Register new local user"""
+        """Register new local user using bcrypt"""
         password_hash = self.hash_password(password)
         with self.get_db_connection() as conn:
             conn.execute(
                 'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-                (username, password_hash)
+                (username, password_hash.decode('utf-8'))
             )
 
+
     def authenticate(self, username, password):
-        """Authenticate user"""
-        password_hash = self.hash_password(password)
+        """Authenticate user using bcrypt"""
         with self.get_db_connection() as conn:
-            user = conn.execute(
-                'SELECT id FROM users WHERE username = ? AND password_hash = ?',
-                (username, password_hash)
+            row = conn.execute(
+                'SELECT id, password_hash FROM users WHERE username = ?',
+                (username,)
             ).fetchone()
-        return user is not None
+
+        if not row:
+            return False
+
+        stored = row[1].encode('utf-8')
+        return bcrypt.checkpw(password.encode('utf-8'), stored)
 
     def hash_password(self, password):
-        return hashlib.sha256(password.encode('utf-8')).hexdigest()
+        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
     @contextmanager
     def get_db_connection(self):

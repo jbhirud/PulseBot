@@ -1,4 +1,5 @@
 import ccxt
+import os
 
 
 class BinanceManager:
@@ -17,12 +18,18 @@ class BinanceManager:
     def connect_testnet(self, apiKey=None, secret=None):
         """Connect to Binance testnet (sandbox)"""
         params = {}
-        # ccxt uses 'test' or 'sandbox' depending on exchange; use sandbox for compatibility
         params.update({'sandbox': True})
+        # prefer explicit args, fall back to env vars
+        apiKey = apiKey or self.config.get('apiKey') or os.environ.get('BINANCE_API_KEY')
+        secret = secret or self.config.get('secret') or os.environ.get('BINANCE_SECRET')
+
         if apiKey and secret:
             params.update({'apiKey': apiKey, 'secret': secret})
 
-        self.exchange = ccxt.binance(params)
+        try:
+            self.exchange = ccxt.binance(params)
+        except Exception:
+            self.exchange = None
         self.is_testnet = True
         return self.exchange
 
