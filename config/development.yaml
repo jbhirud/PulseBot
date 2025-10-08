@@ -1,0 +1,4 @@
+include: default.yaml
+
+app:
+  log_level: DEBUG

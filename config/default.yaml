@@ -1,0 +1,3 @@
+app:
+  name: PulseBot
+  log_level: INFO
