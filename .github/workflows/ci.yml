@@ -40,6 +40,24 @@ jobs:
         run: |
           PYTHONPATH=src python -m pytest --cov=src --cov-report=xml -q
 
+      - name: Check coverage threshold
+        run: |
+          pip install coverage
+          python - <<'PY'
+import sys
+from coverage import Coverage
+cov = Coverage(data_file='coverage.xml')
+cov.start()
+cov.stop()
+try:
+    import xml.etree.ElementTree as ET
+    tree = ET.parse('coverage.xml')
+    root = tree.getroot()
+    missed = float(root.attrib.get('line-rate', '0'))
+except Exception:
+    sys.exit(1)
+PY
+
       - name: Upload coverage.xml
         uses: actions/upload-artifact@v4
         with:
